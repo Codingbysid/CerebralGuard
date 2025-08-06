@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CerebralGuard - AI-Powered Phishing Detection</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .gradient-bg-dark {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .card-hover {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .card-hover:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        
+        .loading {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .verdict-malicious { 
+            color: #ef4444; 
+            text-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+        }
+        .verdict-suspicious { 
+            color: #f59e0b; 
+            text-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+        }
+        .verdict-safe { 
+            color: #10b981; 
+            text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.6s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .slide-in {
+            animation: slideIn 0.8s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .pulse-glow {
+            animation: pulseGlow 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes pulseGlow {
+            from { box-shadow: 0 0 20px rgba(102, 126, 234, 0.4); }
+            to { box-shadow: 0 0 30px rgba(102, 126, 234, 0.8); }
+        }
+        
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .progress-bar {
+            transition: width 1s ease-in-out;
+        }
+        
+        .floating {
+            animation: floating 3s ease-in-out infinite;
+        }
+        
+        @keyframes floating {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .typing-effect {
+            overflow: hidden;
+            border-right: 2px solid #667eea;
+            white-space: nowrap;
+            animation: typing 3.5s steps(40, end), blink-caret 0.75s step-end infinite;
+        }
+        
+        @keyframes typing {
+            from { width: 0; }
+            to { width: 100%; }
+        }
+        
+        @keyframes blink-caret {
+            from, to { border-color: transparent; }
+            50% { border-color: #667eea; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="gradient-bg text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center">
+                    <div class="relative">
+                        <i class="fas fa-brain text-3xl mr-3 floating"></i>
+                        <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full pulse-glow"></div>
+                    </div>
+                    <h1 class="text-2xl font-bold text-shadow">CerebralGuard</h1>
+                </div>
+                <div class="hidden md:flex space-x-8">
+                    <a href="#home" class="hover:text-gray-200 transition duration-300 font-medium">Home</a>
+                    <a href="#features" class="hover:text-gray-200 transition duration-300 font-medium">Features</a>
+                    <a href="#analyze" class="hover:text-gray-200 transition duration-300 font-medium">Analyze</a>
+                    <a href="#dashboard" class="hover:text-gray-200 transition duration-300 font-medium">Dashboard</a>
+                    <a href="#about" class="hover:text-gray-200 transition duration-300 font-medium">About</a>
+                </div>
+                <div class="md:hidden">
+                    <button id="mobile-menu-btn" class="text-white">
+                        <i class="fas fa-bars text-xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="hidden md:hidden bg-white text-gray-800">
+            <div class="px-2 pt-2 pb-3 space-y-1">
+                <a href="#home" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-100">Home</a>
+                <a href="#features" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-100">Features</a>
+                <a href="#analyze" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-100">Analyze</a>
+                <a href="#dashboard" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-100">Dashboard</a>
+                <a href="#about" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-100">About</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="home" class="gradient-bg text-white py-20 relative overflow-hidden">
+        <div class="absolute inset-0 bg-black opacity-10"></div>
+        <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div class="fade-in">
+                <h1 class="text-6xl md:text-7xl font-bold mb-6 text-shadow">
+                    <span class="typing-effect">Autonomous AI</span><br>
+                    <span class="text-4xl md:text-5xl">Phishing Detection</span>
+                </h1>
+                <p class="text-xl md:text-2xl mb-8 max-w-4xl mx-auto leading-relaxed">
+                    Protect your organization with advanced AI that automatically detects, analyzes, and responds to phishing threats in real-time. 
+                    <span class="font-semibold">95%+ automation rate</span> with <span class="font-semibold"><2 minute processing time</span>.
+                </p>
+                <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6">
+                    <button onclick="scrollToSection('analyze')" class="bg-white text-purple-600 px-8 py-4 rounded-xl font-semibold hover:bg-gray-100 transition duration-300 transform hover:scale-105 shadow-lg">
+                        <i class="fas fa-shield-alt mr-2"></i>Try Analysis Now
+                    </button>
+                    <button onclick="scrollToSection('dashboard')" class="glass-effect text-white px-8 py-4 rounded-xl font-semibold hover:bg-white hover:text-purple-600 transition duration-300 transform hover:scale-105">
+                        <i class="fas fa-chart-line mr-2"></i>View Dashboard
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Stats Cards -->
+            <div class="grid md:grid-cols-3 gap-6 mt-16">
+                <div class="glass-effect p-6 rounded-xl text-center">
+                    <i class="fas fa-bolt text-4xl mb-4"></i>
+                    <h3 class="text-2xl font-bold">95%+</h3>
+                    <p class="text-sm opacity-90">Automation Rate</p>
+                </div>
+                <div class="glass-effect p-6 rounded-xl text-center">
+                    <i class="fas fa-clock text-4xl mb-4"></i>
+                    <h3 class="text-2xl font-bold"><2 min</h3>
+                    <p class="text-sm opacity-90">Processing Time</p>
+                </div>
+                <div class="glass-effect p-6 rounded-xl text-center">
+                    <i class="fas fa-shield-check text-4xl mb-4"></i>
+                    <h3 class="text-2xl font-bold">99%+</h3>
+                    <p class="text-sm opacity-90">Accuracy Rate</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="py-20 bg-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-bold mb-4 gradient-text">Advanced AI Workflow</h2>
+                <p class="text-xl text-gray-600 max-w-3xl mx-auto">Our multi-step AI process ensures comprehensive threat detection and analysis</p>
+            </div>
+            
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div class="card-hover bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+                    <div class="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-search text-2xl text-white"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-4">Smart IOC Extraction</h3>
+                    <p class="text-gray-600">Advanced AI extracts URLs, domains, IPs, and other threat indicators from emails automatically.</p>
+                </div>
+                
+                <div class="card-hover bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+                    <div class="w-16 h-16 bg-gradient-to-r from-green-500 to-blue-600 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-database text-2xl text-white"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-4">Threat Intelligence</h3>
+                    <p class="text-gray-600">Real-time database search and external reputation checking for comprehensive threat analysis.</p>
+                </div>
+                
+                <div class="card-hover bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+                    <div class="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-600 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-brain text-2xl text-white"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-4">ML Analysis</h3>
+                    <p class="text-gray-600">Custom BERT model provides independent verification with deep learning pattern recognition.</p>
+                </div>
+                
+                <div class="card-hover bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+                    <div class="w-16 h-16 bg-gradient-to-r from-yellow-500 to-orange-600 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-cogs text-2xl text-white"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-4">AI Synthesis</h3>
+                    <p class="text-gray-600">Advanced LLM combines all evidence to make intelligent decisions with detailed explanations.</p>
+                </div>
+                
+                <div class="card-hover bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+                    <div class="w-16 h-16 bg-gradient-to-r from-red-500 to-pink-600 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-robot text-2xl text-white"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-4">Automated Actions</h3>
+                    <p class="text-gray-600">Instant Slack alerts, database logging, and automated response actions based on threat level.</p>
+                </div>
+                
+                <div class="card-hover bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+                    <div class="w-16 h-16 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-chart-line text-2xl text-white"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-4">Continuous Learning</h3>
+                    <p class="text-gray-600">Self-improving system that learns from every interaction and builds organization-specific intelligence.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Analysis Section -->
+    <section id="analyze" class="py-20 bg-gray-50">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-bold mb-4 gradient-text">Email Analysis</h2>
+                <p class="text-xl text-gray-600">Test our AI system with any suspicious email</p>
+            </div>
+            
+            <div class="grid lg:grid-cols-2 gap-12">
+                <!-- Input Form -->
+                <div class="card-hover bg-white p-8 rounded-2xl shadow-lg">
+                    <div class="flex items-center mb-6">
+                        <div class="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center mr-4">
+                            <i class="fas fa-envelope text-white"></i>
+                        </div>
+                        <h3 class="text-2xl font-semibold">Submit Email for Analysis</h3>
+                    </div>
+                    
+                    <form id="emailForm" class="space-y-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-3">Email Content</label>
+                            <textarea 
+                                id="emailContent" 
+                                rows="12" 
+                                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                                placeholder="Paste your email content here (including headers)..."
+                            ></textarea>
+                        </div>
+                        
+                        <div class="flex space-x-4">
+                            <button type="submit" class="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:from-purple-700 hover:to-blue-700 transition duration-300 transform hover:scale-105 shadow-lg">
+                                <i class="fas fa-search mr-2"></i>Analyze Email
+                            </button>
+                            <button type="button" onclick="loadSampleEmail()" class="bg-gray-500 text-white py-3 px-6 rounded-xl font-semibold hover:bg-gray-600 transition duration-300 transform hover:scale-105">
+                                <i class="fas fa-file-alt mr-2"></i>Load Sample
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Results Display -->
+                <div class="card-hover bg-white p-8 rounded-2xl shadow-lg">
+                    <div class="flex items-center mb-6">
+                        <div class="w-12 h-12 bg-gradient-to-r from-green-500 to-blue-600 rounded-xl flex items-center justify-center mr-4">
+                            <i class="fas fa-chart-bar text-white"></i>
+                        </div>
+                        <h3 class="text-2xl font-semibold">Analysis Results</h3>
+                    </div>
+                    
+                    <div id="loadingResults" class="hidden text-center py-12">
+                        <div class="relative">
+                            <i class="fas fa-cog loading text-4xl text-purple-600 mb-4"></i>
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <div class="w-16 h-16 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                            </div>
+                        </div>
+                        <p class="text-gray-600 text-lg font-medium">Analyzing email with AI...</p>
+                        <p class="text-gray-500 text-sm mt-2">This may take a few moments</p>
+                    </div>
+                    
+                    <div id="resultsDisplay" class="hidden space-y-6">
+                        <!-- Verdict -->
+                        <div class="border-l-4 border-purple-500 pl-6 py-4 bg-gradient-to-r from-purple-50 to-blue-50 rounded-r-xl">
+                            <h4 class="font-semibold text-lg mb-2">Verdict</h4>
+                            <p id="verdict" class="text-2xl font-bold"></p>
+                        </div>
+                        
+                        <!-- Confidence -->
+                        <div class="border-l-4 border-blue-500 pl-6 py-4 bg-gradient-to-r from-blue-50 to-green-50 rounded-r-xl">
+                            <h4 class="font-semibold mb-3">Confidence Level</h4>
+                            <div class="flex items-center">
+                                <div class="flex-1 bg-gray-200 rounded-full h-3 mr-4">
+                                    <div id="confidenceBar" class="bg-gradient-to-r from-blue-500 to-green-500 h-3 rounded-full progress-bar"></div>
+                                </div>
+                                <span id="confidenceText" class="text-sm font-bold"></span>
+                            </div>
+                        </div>
+                        
+                        <!-- Summary -->
+                        <div class="border-l-4 border-green-500 pl-6 py-4 bg-gradient-to-r from-green-50 to-yellow-50 rounded-r-xl">
+                            <h4 class="font-semibold mb-2">Analysis Summary</h4>
+                            <p id="summary" class="text-gray-700 leading-relaxed"></p>
+                        </div>
+                        
+                        <!-- Processing Time -->
+                        <div class="border-l-4 border-yellow-500 pl-6 py-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-r-xl">
+                            <h4 class="font-semibold mb-2">Processing Time</h4>
+                            <p id="processingTime" class="text-gray-700 font-medium"></p>
+                        </div>
+                    </div>
+                    
+                    <div id="errorDisplay" class="hidden text-center py-12">
+                        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-exclamation-triangle text-2xl text-red-500"></i>
+                        </div>
+                        <p id="errorMessage" class="text-red-600 font-medium"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dashboard Section -->
+    <section id="dashboard" class="py-20 bg-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-bold mb-4 gradient-text">Security Dashboard</h2>
+                <p class="text-xl text-gray-600">Real-time insights into your organization's security posture</p>
+            </div>
+            
+            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
+                <!-- Statistics Cards -->
+                <div class="card-hover bg-gradient-to-br from-blue-500 to-blue-600 p-8 rounded-2xl text-white text-center">
+                    <i class="fas fa-envelope text-4xl mb-4"></i>
+                    <h3 class="text-3xl font-bold mb-2" id="totalEmails">0</h3>
+                    <p class="text-blue-100">Total Emails</p>
+                </div>
+                
+                <div class="card-hover bg-gradient-to-br from-red-500 to-red-600 p-8 rounded-2xl text-white text-center">
+                    <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                    <h3 class="text-3xl font-bold mb-2" id="maliciousCount">0</h3>
+                    <p class="text-red-100">Malicious</p>
+                </div>
+                
+                <div class="card-hover bg-gradient-to-br from-yellow-500 to-yellow-600 p-8 rounded-2xl text-white text-center">
+                    <i class="fas fa-question-circle text-4xl mb-4"></i>
+                    <h3 class="text-3xl font-bold mb-2" id="suspiciousCount">0</h3>
+                    <p class="text-yellow-100">Suspicious</p>
+                </div>
+                
+                <div class="card-hover bg-gradient-to-br from-green-500 to-green-600 p-8 rounded-2xl text-white text-center">
+                    <i class="fas fa-check-circle text-4xl mb-4"></i>
+                    <h3 class="text-3xl font-bold mb-2" id="safeCount">0</h3>
+                    <p class="text-green-100">Safe</p>
+                </div>
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="card-hover bg-white p-8 rounded-2xl shadow-lg">
+                <div class="flex items-center mb-6">
+                    <div class="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-600 rounded-xl flex items-center justify-center mr-4">
+                        <i class="fas fa-history text-white"></i>
+                    </div>
+                    <h3 class="text-2xl font-semibold">Recent Activity</h3>
+                </div>
+                <div id="recentActivity" class="space-y-4">
+                    <div class="text-center py-8">
+                        <i class="fas fa-inbox text-4xl text-gray-300 mb-4"></i>
+                        <p class="text-gray-500">No recent activity</p>
+                        <p class="text-gray-400 text-sm">Start analyzing emails to see activity here</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="py-20 bg-gray-50">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-bold mb-4 gradient-text">About CerebralGuard</h2>
+                <p class="text-xl text-gray-600">The future of autonomous cybersecurity</p>
+            </div>
+            
+            <div class="grid lg:grid-cols-2 gap-12">
+                <div class="space-y-8">
+                    <div class="card-hover bg-white p-8 rounded-2xl shadow-lg">
+                        <h3 class="text-2xl font-semibold mb-6 flex items-center">
+                            <i class="fas fa-brain text-purple-600 mr-3"></i>
+                            Multi-Step AI Workflow
+                        </h3>
+                        <ul class="space-y-4">
+                            <li class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700">Advanced email parsing and IOC extraction using Gemini AI</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700">Real-time threat intelligence database search</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700">External reputation checking with VirusTotal & AbuseIPDB</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700">Custom BERT model for independent analysis</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-check-circle text-green-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700">AI-powered decision synthesis and automated actions</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="space-y-8">
+                    <div class="card-hover bg-white p-8 rounded-2xl shadow-lg">
+                        <h3 class="text-2xl font-semibold mb-6 flex items-center">
+                            <i class="fas fa-rocket text-blue-600 mr-3"></i>
+                            Key Features
+                        </h3>
+                        <ul class="space-y-4">
+                            <li class="flex items-start">
+                                <i class="fas fa-shield-alt text-blue-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700"><strong>95%+ automation rate</strong> - Minimal human intervention required</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-bolt text-yellow-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700"><strong><2 minute processing time</strong> - Lightning-fast analysis</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-brain text-purple-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700"><strong>Self-improving AI</strong> - Learns from every interaction</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-database text-green-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700"><strong>Real-time threat intelligence</strong> - Always up-to-date</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-slack text-pink-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700"><strong>Slack integration</strong> - Instant team notifications</span>
+                            </li>
+                            <li class="flex items-start">
+                                <i class="fas fa-chart-line text-indigo-500 mr-3 mt-1"></i>
+                                <span class="text-gray-700"><strong>Comprehensive analytics</strong> - Detailed insights and reporting</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="gradient-bg-dark text-white py-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid md:grid-cols-4 gap-8">
+                <div class="col-span-2">
+                    <div class="flex items-center mb-4">
+                        <i class="fas fa-brain text-3xl mr-3"></i>
+                        <h3 class="text-2xl font-bold">CerebralGuard</h3>
+                    </div>
+                    <p class="text-gray-300 mb-6 max-w-md">
+                        Defending organizations with autonomous AI intelligence. The future of cybersecurity is here.
+                    </p>
+                    <div class="flex space-x-4">
+                        <a href="#" class="text-gray-300 hover:text-white transition"><i class="fab fa-twitter text-xl"></i></a>
+                        <a href="#" class="text-gray-300 hover:text-white transition"><i class="fab fa-linkedin text-xl"></i></a>
+                        <a href="#" class="text-gray-300 hover:text-white transition"><i class="fab fa-github text-xl"></i></a>
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 class="text-lg font-semibold mb-4">Product</h4>
+                    <ul class="space-y-2 text-gray-300">
+                        <li><a href="#" class="hover:text-white transition">Features</a></li>
+                        <li><a href="#" class="hover:text-white transition">Pricing</a></li>
+                        <li><a href="#" class="hover:text-white transition">API</a></li>
+                        <li><a href="#" class="hover:text-white transition">Documentation</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h4 class="text-lg font-semibold mb-4">Company</h4>
+                    <ul class="space-y-2 text-gray-300">
+                        <li><a href="#" class="hover:text-white transition">About</a></li>
+                        <li><a href="#" class="hover:text-white transition">Blog</a></li>
+                        <li><a href="#" class="hover:text-white transition">Careers</a></li>
+                        <li><a href="#" class="hover:text-white transition">Contact</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="border-t border-gray-700 mt-8 pt-8 text-center">
+                <p class="text-gray-400">&copy; 2024 CerebralGuard. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // API Configuration
+        const API_BASE_URL = 'http://localhost:8000';
+        
+        // Mobile menu toggle
+        document.getElementById('mobile-menu-btn').addEventListener('click', function() {
+            const menu = document.getElementById('mobile-menu');
+            menu.classList.toggle('hidden');
+        });
+        
+        // Utility Functions
+        function scrollToSection(sectionId) {
+            document.getElementById(sectionId).scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function showLoading() {
+            document.getElementById('loadingResults').classList.remove('hidden');
+            document.getElementById('resultsDisplay').classList.add('hidden');
+            document.getElementById('errorDisplay').classList.add('hidden');
+        }
+        
+        function hideLoading() {
+            document.getElementById('loadingResults').classList.add('hidden');
+        }
+        
+        function showResults(data) {
+            hideLoading();
+            document.getElementById('resultsDisplay').classList.remove('hidden');
+            
+            // Update verdict with animation
+            const verdict = data.final_analysis.verdict;
+            const verdictElement = document.getElementById('verdict');
+            verdictElement.textContent = verdict.toUpperCase();
+            verdictElement.className = `text-2xl font-bold verdict-${verdict} fade-in`;
+            
+            // Update confidence with animation
+            const confidence = data.final_analysis.confidence || 'medium';
+            const confidencePercent = confidence === 'high' ? 90 : confidence === 'medium' ? 70 : 50;
+            const confidenceBar = document.getElementById('confidenceBar');
+            const confidenceText = document.getElementById('confidenceText');
+            
+            setTimeout(() => {
+                confidenceBar.style.width = `${confidencePercent}%`;
+                confidenceText.textContent = `${confidencePercent}%`;
+            }, 500);
+            
+            // Update summary
+            document.getElementById('summary').textContent = data.final_analysis.summary || 'No summary available';
+            
+            // Update processing time
+            document.getElementById('processingTime').textContent = `${data.processing_time.toFixed(2)} seconds`;
+            
+            // Update dashboard
+            updateDashboard();
+        }
+        
+        function showError(message) {
+            hideLoading();
+            document.getElementById('errorDisplay').classList.remove('hidden');
+            document.getElementById('errorMessage').textContent = message;
+        }
+        
+        function loadSampleEmail() {
+            const sampleEmail = `From: security@microsoft-support.com
+Subject: URGENT: Your Microsoft Account Has Been Compromised
+Date: Mon, 15 Jan 2024 10:30:00 +0000
+
+Dear Microsoft User,
+
+We have detected suspicious activity on your Microsoft account. Your account has been temporarily suspended for security reasons.
+
+To restore access to your account immediately, please click the link below and verify your identity:
+
+https://microsoft-verify.secure-login.com/account/verify
+
+If you do not verify within 24 hours, your account will be permanently deleted.
+
+This is an automated security message. Please do not reply to this email.
+
+Microsoft Security Team`;
+            
+            document.getElementById('emailContent').value = sampleEmail;
+        }
+        
+        async function updateDashboard() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/statistics`);
+                const stats = await response.json();
+                
+                // Animate number changes
+                animateNumber('totalEmails', stats.total_processed);
+                animateNumber('maliciousCount', stats.malicious_count);
+                animateNumber('suspiciousCount', stats.suspicious_count);
+                animateNumber('safeCount', stats.safe_count);
+                
+            } catch (error) {
+                console.error('Error updating dashboard:', error);
+            }
+        }
+        
+        function animateNumber(elementId, targetValue) {
+            const element = document.getElementById(elementId);
+            const currentValue = parseInt(element.textContent) || 0;
+            const increment = (targetValue - currentValue) / 20;
+            let current = currentValue;
+            
+            const timer = setInterval(() => {
+                current += increment;
+                if ((increment > 0 && current >= targetValue) || (increment < 0 && current <= targetValue)) {
+                    element.textContent = targetValue;
+                    clearInterval(timer);
+                } else {
+                    element.textContent = Math.floor(current);
+                }
+            }, 50);
+        }
+        
+        // Form Submission
+        document.getElementById('emailForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const emailContent = document.getElementById('emailContent').value.trim();
+            if (!emailContent) {
+                showError('Please enter email content to analyze');
+                return;
+            }
+            
+            showLoading();
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/process-email`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email_content: emailContent
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        showResults(data);
+                    } else {
+                        showError(data.error || 'Analysis failed');
+                    }
+                } else {
+                    const errorData = await response.json();
+                    showError(errorData.detail || 'Server error');
+                }
+                
+            } catch (error) {
+                showError('Network error. Please check if the API is running.');
+            }
+        });
+        
+        // Initialize dashboard on load
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDashboard();
+            
+            // Add scroll animations
+            const observerOptions = {
+                threshold: 0.1,
+                rootMargin: '0px 0px -50px 0px'
+            };
+            
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('fade-in');
+                    }
+                });
+            }, observerOptions);
+            
+            document.querySelectorAll('.card-hover').forEach(card => {
+                observer.observe(card);
+            });
+        });
+    </script>
+    <script src="script.js"></script>
+</body>
+</html> 

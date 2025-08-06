@@ -1,0 +1,44 @@
+# Core ML and AI
+torch>=2.0.0
+transformers>=4.30.0
+datasets>=2.12.0
+scikit-learn>=1.3.0
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Database and Vector Operations
+mysql-connector-python>=8.0.33
+pymysql>=1.0.3
+sentence-transformers>=2.2.2
+
+# API and Web Framework
+fastapi>=0.100.0
+uvicorn>=0.23.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Email Processing
+email-validator>=2.0.0
+imaplib2>=3.6
+
+# External API Integrations
+google-generativeai>=0.3.0
+
+# Utilities
+python-multipart>=0.0.6
+pydantic>=2.0.0
+loguru>=0.7.0
+
+# Enhanced Training and Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.15.0
+jupyter>=1.0.0
+
+# Data Processing
+openpyxl>=3.1.0
+xlrd>=2.0.1
+
+# Web Development (for serving frontend)
+aiofiles>=23.1.0
+jinja2>=3.1.0 
