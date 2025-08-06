@@ -14,6 +14,8 @@ import os
 from dotenv import load_dotenv
 from loguru import logger
 import time
+import asyncio
+import aiohttp
 from datetime import datetime
 
 # Import our modules
@@ -74,6 +76,107 @@ class CerebralGuardAgent:
         except Exception as e:
             logger.error(f"Error calling Gemini API: {e}")
             return f"Error: {str(e)}"
+    
+    async def analyze_with_gemini_async(self, prompt: str, api_key: str = None) -> str:
+        """
+        Async version of Gemini API call.
+        
+        Args:
+            prompt: The prompt to send to Gemini
+            api_key: Optional API key override
+            
+        Returns:
+            Gemini's response text
+        """
+        if not self.model:
+            logger.error("Gemini model not initialized")
+            return "Error: Gemini API not configured"
+        
+        try:
+            # Run the synchronous call in a thread pool
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None, 
+                lambda: self.model.generate_content(prompt)
+            )
+            return response.text
+        except Exception as e:
+            logger.error(f"Error calling Gemini API: {e}")
+            return f"Error: {str(e)}"
+    
+    async def check_external_apis_async(self, iocs: Dict) -> Dict:
+        """
+        Async method to check external APIs for reputation data.
+        
+        Args:
+            iocs: Extracted IOCs
+            
+        Returns:
+            Dictionary with external API results
+        """
+        tasks = []
+        
+        # Create tasks for VirusTotal checks
+        if 'urls' in iocs:
+            for url in iocs['urls']:
+                tasks.append(self._check_url_reputation_async(url))
+        
+        if 'domains' in iocs:
+            for domain in iocs['domains']:
+                tasks.append(self._check_domain_reputation_async(domain))
+        
+        if 'hashes' in iocs:
+            for file_hash in iocs['hashes']:
+                tasks.append(self._check_hash_reputation_async(file_hash))
+        
+        # Execute all tasks concurrently
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            external_results = {
+                'urls': [],
+                'domains': [],
+                'hashes': []
+            }
+            
+            for result in results:
+                if isinstance(result, dict) and 'status' in result:
+                    if 'url' in result:
+                        external_results['urls'].append(result)
+                    elif 'domain' in result:
+                        external_results['domains'].append(result)
+                    elif 'file_hash' in result:
+                        external_results['hashes'].append(result)
+            
+            return external_results
+        
+        return {}
+    
+    async def _check_url_reputation_async(self, url: str) -> Dict:
+        """Async URL reputation check."""
+        try:
+            # Use the cached version from VirusTotal API
+            return virustotal_api.check_url_reputation(url)
+        except Exception as e:
+            logger.error(f"Error checking URL reputation: {e}")
+            return {'error': str(e)}
+    
+    async def _check_domain_reputation_async(self, domain: str) -> Dict:
+        """Async domain reputation check."""
+        try:
+            return virustotal_api.check_domain_reputation(domain)
+        except Exception as e:
+            logger.error(f"Error checking domain reputation: {e}")
+            return {'error': str(e)}
+    
+    async def _check_hash_reputation_async(self, file_hash: str) -> Dict:
+        """Async file hash reputation check."""
+        try:
+            return virustotal_api.check_file_hash(file_hash)
+        except Exception as e:
+            logger.error(f"Error checking file hash reputation: {e}")
+            return {'error': str(e)}
     
     def parse_email(self, email_content: str) -> Dict:
         """
@@ -459,6 +562,159 @@ class CerebralGuardAgent:
             return {
                 'error': str(e),
                 'success': False
+            }
+    
+    async def process_email_async(self, email_content: str) -> Dict:
+        """
+        Async version of the main workflow: Process a single email through all steps.
+        
+        Args:
+            email_content: Raw email content (.eml format)
+            
+        Returns:
+            Complete analysis results
+        """
+        start_time = time.time()
+        
+        try:
+            logger.info("Starting async email analysis workflow")
+            
+            # Step 1: Parse email and extract IOCs
+            parsed_data = self.parse_email(email_content)
+            if not parsed_data:
+                raise Exception("Failed to parse email")
+            
+            # Step 2: Search threat intelligence (database operations)
+            threat_intel = self.search_threat_intelligence(parsed_data['extracted_iocs'])
+            
+            # Step 3: External reputation check (async)
+            external_scores = await self.check_external_apis_async(parsed_data['extracted_iocs'])
+            virustotal_score = virustotal_api.get_overall_score(external_scores)
+            
+            # Step 4: In-house model analysis
+            inhouse_analysis = self.analyze_with_inhouse_model(parsed_data['email_body'])
+            
+            # Step 5: Synthesize and decide (async Gemini call)
+            all_evidence = {
+                **parsed_data,
+                'vector_search': threat_intel['vector_search'],
+                'threat_intel': threat_intel['threat_intel'],
+                'external_reputation': external_scores,
+                'virustotal_score': virustotal_score,
+                'inhouse_model_score': inhouse_analysis.get('phishing_probability', 0.5) * 100,
+                'inhouse_confidence': inhouse_analysis.get('confidence', 0.0) * 100
+            }
+            
+            final_analysis = await self.synthesize_and_decide_async(all_evidence)
+            
+            # Step 6: Take action
+            incident_data = {
+                **parsed_data,
+                'virustotal_score': virustotal_score,
+                'abuseipdb_score': 0,  # Would be implemented separately
+                'inhouse_model_score': inhouse_analysis.get('phishing_probability', 0.5) * 100,
+                'gemini_verdict': final_analysis.get('verdict', 'suspicious'),
+                'gemini_summary': final_analysis.get('summary', 'No summary available'),
+                'email_vector': self._create_email_vector(parsed_data['extracted_iocs'])
+            }
+            
+            self.take_action(incident_data, final_analysis['verdict'])
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
+            self.stats['processing_times'].append(processing_time)
+            
+            logger.info(f"Async email analysis completed in {processing_time:.2f} seconds")
+            
+            return {
+                'incident_data': incident_data,
+                'final_analysis': final_analysis,
+                'processing_time': processing_time,
+                'success': True
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in async email processing workflow: {e}")
+            return {
+                'error': str(e),
+                'success': False
+            }
+    
+    async def synthesize_and_decide_async(self, all_evidence: Dict) -> Dict:
+        """
+        Async version of Step 5: Synthesize all evidence and make final decision using Gemini.
+        
+        Args:
+            all_evidence: All collected evidence from previous steps
+            
+        Returns:
+            Dictionary with final verdict and summary
+        """
+        try:
+            # Create comprehensive prompt for Gemini
+            synthesis_prompt = f"""
+            You are a Senior Security Analyst at CerebralGuard. Review all the evidence below and provide a final verdict on whether this email is malicious, suspicious, or safe.
+            
+            EMAIL INFORMATION:
+            - Sender: {all_evidence.get('sender_email', 'Unknown')}
+            - Subject: {all_evidence.get('subject', 'No subject')}
+            - Body: {all_evidence.get('email_body', '')[:1000]}...
+            
+            EXTRACTED IOCs:
+            {all_evidence.get('extracted_iocs', {})}
+            
+            THREAT INTELLIGENCE RESULTS:
+            - Similar incidents found: {len(all_evidence.get('vector_search', []))}
+            - Threat intelligence matches: {all_evidence.get('threat_intel', {})}
+            - External reputation scores: {all_evidence.get('external_reputation', {})}
+            
+            IN-HOUSE MODEL ANALYSIS:
+            - Phishing probability: {all_evidence.get('inhouse_model_score', 0):.1f}%
+            - Confidence: {all_evidence.get('inhouse_confidence', 0):.1f}%
+            
+            EXTERNAL REPUTATION SCORES:
+            - VirusTotal overall score: {all_evidence.get('virustotal_score', 0)}/100
+            
+            Based on all this evidence, provide:
+            1. FINAL VERDICT: "malicious", "suspicious", or "safe"
+            2. CONFIDENCE LEVEL: "high", "medium", or "low"
+            3. SUMMARY: A concise explanation of your decision (2-3 sentences)
+            4. RECOMMENDED ACTION: What should be done with this email
+            
+            Format your response as JSON:
+            {{
+                "verdict": "malicious|suspicious|safe",
+                "confidence": "high|medium|low",
+                "summary": "your explanation here",
+                "recommended_action": "action description"
+            }}
+            """
+            
+            # Get Gemini's analysis (async)
+            gemini_response = await self.analyze_with_gemini_async(synthesis_prompt)
+            
+            # Try to parse JSON response
+            try:
+                import json
+                analysis = json.loads(gemini_response)
+            except:
+                # Fallback: create basic analysis
+                analysis = {
+                    'verdict': 'suspicious',
+                    'confidence': 'medium',
+                    'summary': 'Unable to parse Gemini response. Defaulting to suspicious.',
+                    'recommended_action': 'Human review required'
+                }
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Error in async synthesis and decision: {e}")
+            return {
+                'verdict': 'suspicious',
+                'confidence': 'low',
+                'summary': f'Error in analysis: {str(e)}',
+                'recommended_action': 'Human review required'
             }
     
     def get_statistics(self) -> Dict:

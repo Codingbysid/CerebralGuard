@@ -3,17 +3,22 @@ CerebralGuard FastAPI Application
 Provides REST API endpoints for the autonomous phishing detection system.
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, validator
 from typing import Dict, List, Optional
 import uvicorn
 from pathlib import Path
 import os
 from dotenv import load_dotenv
 from loguru import logger
+import re
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Import our modules
 from agent.main import cerebral_guard
@@ -22,12 +27,45 @@ from integrations.slack import slack_notifier
 # Load environment variables
 load_dotenv()
 
+# Rate limiting configuration
+limiter = Limiter(key_func=get_remote_address)
+
+# Security configuration
+security = HTTPBearer(auto_error=False)
+
+def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Verify API key for protected endpoints."""
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    api_key = os.getenv('API_KEY')
+    if not api_key:
+        logger.warning("API_KEY not configured - allowing all requests")
+        return credentials.credentials
+    
+    if credentials.credentials != api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return credentials.credentials
+
 # Create FastAPI app
 app = FastAPI(
     title="CerebralGuard API",
     description="Autonomous AI agent for phishing threat detection",
     version="1.0.0"
 )
+
+# Configure rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware
 app.add_middleware(
@@ -48,6 +86,37 @@ class EmailRequest(BaseModel):
     """Request model for email processing."""
     email_content: str
     email_hash: Optional[str] = None
+    
+    @validator('email_content')
+    def validate_email_content(cls, v):
+        """Validate email content for security and quality."""
+        if not v or not v.strip():
+            raise ValueError('Email content cannot be empty')
+        
+        if len(v) > 100000:  # 100KB limit
+            raise ValueError('Email content too large (max 100KB)')
+        
+        # Check for potentially malicious content
+        dangerous_patterns = [
+            r'<script[^>]*>.*?</script>',  # Script tags
+            r'javascript:',  # JavaScript protocol
+            r'vbscript:',   # VBScript protocol
+            r'data:text/html',  # Data URLs
+            r'<iframe[^>]*>',   # Iframe tags
+        ]
+        
+        for pattern in dangerous_patterns:
+            if re.search(pattern, v, re.IGNORECASE):
+                raise ValueError('Email content contains potentially malicious content')
+        
+        return v.strip()
+    
+    @validator('email_hash')
+    def validate_email_hash(cls, v):
+        """Validate email hash format."""
+        if v and not re.match(r'^[a-fA-F0-9]{64}$', v):
+            raise ValueError('Invalid email hash format (must be 64 character hex)')
+        return v
 
 class EmailResponse(BaseModel):
     """Response model for email processing."""
@@ -103,7 +172,12 @@ async def health_check():
     )
 
 @app.post("/process-email", response_model=EmailResponse)
-async def process_email(request: EmailRequest, background_tasks: BackgroundTasks):
+@limiter.limit("10/minute")  # Allow 10 requests per minute per IP
+async def process_email(
+    request: EmailRequest, 
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(verify_api_key)
+):
     """
     Process a suspicious email through the complete CerebralGuard workflow.
     
@@ -118,8 +192,8 @@ async def process_email(request: EmailRequest, background_tasks: BackgroundTasks
     try:
         logger.info("Received email processing request")
         
-        # Process the email through the complete workflow
-        result = cerebral_guard.process_email(request.email_content)
+        # Process the email through the complete async workflow
+        result = await cerebral_guard.process_email_async(request.email_content)
         
         if result['success']:
             return EmailResponse(

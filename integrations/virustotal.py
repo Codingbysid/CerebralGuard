@@ -5,10 +5,14 @@ Checks reputation of URLs, domains, and file hashes.
 
 import requests
 import time
+import hashlib
+import json
 from typing import Dict, List, Optional
 import os
 from dotenv import load_dotenv
 from loguru import logger
+import redis
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Load environment variables
 load_dotenv()
@@ -25,8 +29,78 @@ class VirusTotalAPI:
             'Content-Type': 'application/json'
         }
         
+        # Initialize Redis cache
+        self.redis_client = None
+        self._initialize_cache()
+        
         if not self.api_key:
             logger.warning("VirusTotal API key not found in environment variables")
+    
+    def _initialize_cache(self):
+        """Initialize Redis cache connection."""
+        try:
+            redis_host = os.getenv('REDIS_HOST', 'localhost')
+            redis_port = int(os.getenv('REDIS_PORT', 6379))
+            redis_db = int(os.getenv('REDIS_DB', 0))
+            
+            self.redis_client = redis.Redis(
+                host=redis_host,
+                port=redis_port,
+                db=redis_db,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5
+            )
+            
+            # Test connection
+            self.redis_client.ping()
+            logger.info("Redis cache initialized successfully")
+            
+        except Exception as e:
+            logger.warning(f"Redis cache not available: {e}")
+            self.redis_client = None
+    
+    def _get_cache_key(self, check_type: str, value: str) -> str:
+        """Generate cache key for API response."""
+        return f"virustotal:{check_type}:{hashlib.sha256(value.encode()).hexdigest()}"
+    
+    def _get_cached_result(self, cache_key: str) -> Optional[Dict]:
+        """Get cached result from Redis."""
+        if not self.redis_client:
+            return None
+        
+        try:
+            cached_data = self.redis_client.get(cache_key)
+            if cached_data:
+                result = json.loads(cached_data)
+                logger.info(f"Cache hit for {cache_key}")
+                return result
+        except Exception as e:
+            logger.warning(f"Cache error: {e}")
+        
+        return None
+    
+    def _set_cached_result(self, cache_key: str, result: Dict, ttl: int = 3600):
+        """Cache result in Redis with TTL."""
+        if not self.redis_client:
+            return
+        
+        try:
+            self.redis_client.setex(cache_key, ttl, json.dumps(result))
+            logger.info(f"Cached result for {cache_key} (TTL: {ttl}s)")
+        except Exception as e:
+            logger.warning(f"Cache set error: {e}")
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type((requests.RequestException, ConnectionError))
+    )
+    def _make_api_request(self, endpoint: str, params: Dict) -> requests.Response:
+        """Make API request with retry logic."""
+        response = requests.get(endpoint, params=params, headers=self.headers, timeout=10)
+        response.raise_for_status()
+        return response
     
     def check_url_reputation(self, url: str) -> Dict:
         """
@@ -41,37 +115,43 @@ class VirusTotalAPI:
         if not self.api_key:
             return {'error': 'API key not configured'}
         
+        # Check cache first
+        cache_key = self._get_cache_key('url', url)
+        cached_result = self._get_cached_result(cache_key)
+        if cached_result:
+            return cached_result
+        
         try:
             # URL endpoint
             endpoint = f"{self.base_url}/url/report"
             params = {'apikey': self.api_key, 'resource': url}
             
-            response = requests.get(endpoint, params=params)
+            response = self._make_api_request(endpoint, params)
+            data = response.json()
             
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Extract relevant information
-                positives = data.get('positives', 0)
-                total = data.get('total', 0)
-                scan_date = data.get('scan_date')
-                permalink = data.get('permalink')
-                
-                # Calculate reputation score (0-100, higher = more malicious)
-                reputation_score = (positives / total * 100) if total > 0 else 0
-                
-                return {
-                    'url': url,
-                    'positives': positives,
-                    'total': total,
-                    'reputation_score': reputation_score,
-                    'scan_date': scan_date,
-                    'permalink': permalink,
-                    'status': 'success'
-                }
-            else:
-                logger.error(f"VirusTotal API error: {response.status_code}")
-                return {'error': f'API error: {response.status_code}'}
+            # Extract relevant information
+            positives = data.get('positives', 0)
+            total = data.get('total', 0)
+            scan_date = data.get('scan_date')
+            permalink = data.get('permalink')
+            
+            # Calculate reputation score (0-100, higher = more malicious)
+            reputation_score = (positives / total * 100) if total > 0 else 0
+            
+            result = {
+                'url': url,
+                'positives': positives,
+                'total': total,
+                'reputation_score': reputation_score,
+                'scan_date': scan_date,
+                'permalink': permalink,
+                'status': 'success'
+            }
+            
+            # Cache the result
+            self._set_cached_result(cache_key, result, ttl=3600)  # 1 hour cache
+            
+            return result
                 
         except Exception as e:
             logger.error(f"Error checking URL reputation: {e}")
@@ -90,35 +170,41 @@ class VirusTotalAPI:
         if not self.api_key:
             return {'error': 'API key not configured'}
         
+        # Check cache first
+        cache_key = self._get_cache_key('domain', domain)
+        cached_result = self._get_cached_result(cache_key)
+        if cached_result:
+            return cached_result
+        
         try:
             # Domain endpoint
             endpoint = f"{self.base_url}/domain/report"
             params = {'apikey': self.api_key, 'domain': domain}
             
-            response = requests.get(endpoint, params=params)
+            response = self._make_api_request(endpoint, params)
+            data = response.json()
             
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Extract relevant information
-                positives = data.get('positives', 0)
-                total = data.get('total', 0)
-                categories = data.get('categories', {})
-                
-                # Calculate reputation score
-                reputation_score = (positives / total * 100) if total > 0 else 0
-                
-                return {
-                    'domain': domain,
-                    'positives': positives,
-                    'total': total,
-                    'reputation_score': reputation_score,
-                    'categories': categories,
-                    'status': 'success'
-                }
-            else:
-                logger.error(f"VirusTotal API error: {response.status_code}")
-                return {'error': f'API error: {response.status_code}'}
+            # Extract relevant information
+            positives = data.get('positives', 0)
+            total = data.get('total', 0)
+            categories = data.get('categories', {})
+            
+            # Calculate reputation score
+            reputation_score = (positives / total * 100) if total > 0 else 0
+            
+            result = {
+                'domain': domain,
+                'positives': positives,
+                'total': total,
+                'reputation_score': reputation_score,
+                'categories': categories,
+                'status': 'success'
+            }
+            
+            # Cache the result
+            self._set_cached_result(cache_key, result, ttl=7200)  # 2 hour cache
+            
+            return result
                 
         except Exception as e:
             logger.error(f"Error checking domain reputation: {e}")
@@ -137,37 +223,43 @@ class VirusTotalAPI:
         if not self.api_key:
             return {'error': 'API key not configured'}
         
+        # Check cache first
+        cache_key = self._get_cache_key('hash', file_hash)
+        cached_result = self._get_cached_result(cache_key)
+        if cached_result:
+            return cached_result
+        
         try:
             # File report endpoint
             endpoint = f"{self.base_url}/file/report"
             params = {'apikey': self.api_key, 'resource': file_hash}
             
-            response = requests.get(endpoint, params=params)
+            response = self._make_api_request(endpoint, params)
+            data = response.json()
             
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Extract relevant information
-                positives = data.get('positives', 0)
-                total = data.get('total', 0)
-                scan_date = data.get('scan_date')
-                permalink = data.get('permalink')
-                
-                # Calculate reputation score
-                reputation_score = (positives / total * 100) if total > 0 else 0
-                
-                return {
-                    'file_hash': file_hash,
-                    'positives': positives,
-                    'total': total,
-                    'reputation_score': reputation_score,
-                    'scan_date': scan_date,
-                    'permalink': permalink,
-                    'status': 'success'
-                }
-            else:
-                logger.error(f"VirusTotal API error: {response.status_code}")
-                return {'error': f'API error: {response.status_code}'}
+            # Extract relevant information
+            positives = data.get('positives', 0)
+            total = data.get('total', 0)
+            scan_date = data.get('scan_date')
+            permalink = data.get('permalink')
+            
+            # Calculate reputation score
+            reputation_score = (positives / total * 100) if total > 0 else 0
+            
+            result = {
+                'file_hash': file_hash,
+                'positives': positives,
+                'total': total,
+                'reputation_score': reputation_score,
+                'scan_date': scan_date,
+                'permalink': permalink,
+                'status': 'success'
+            }
+            
+            # Cache the result
+            self._set_cached_result(cache_key, result, ttl=14400)  # 4 hour cache
+            
+            return result
                 
         except Exception as e:
             logger.error(f"Error checking file hash: {e}")

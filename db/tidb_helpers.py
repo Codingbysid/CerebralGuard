@@ -4,7 +4,7 @@ Handles vector search and full-text search operations for threat intelligence.
 """
 
 import mysql.connector
-from mysql.connector import Error
+from mysql.connector import Error, pooling
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 import json
@@ -26,40 +26,60 @@ class TiDBManager:
         self.user = os.getenv('TIDB_USER')
         self.password = os.getenv('TIDB_PASSWORD')
         self.database = os.getenv('TIDB_DATABASE', 'cerebralguard')
-        self.connection = None
+        self.pool = None
+        self._initialize_pool()
         
-    def connect(self) -> bool:
-        """Establish connection to TiDB Serverless."""
+    def _initialize_pool(self):
+        """Initialize connection pool."""
         try:
-            self.connection = mysql.connector.connect(
-                host=self.host,
-                port=self.port,
-                user=self.user,
-                password=self.password,
-                database=self.database,
-                ssl_disabled=False,
-                autocommit=True
-            )
-            logger.info("Successfully connected to TiDB Serverless")
-            return True
+            pool_config = {
+                'pool_name': 'cerebralguard_pool',
+                'pool_size': 5,
+                'host': self.host,
+                'port': self.port,
+                'user': self.user,
+                'password': self.password,
+                'database': self.database,
+                'ssl_disabled': False,
+                'autocommit': True,
+                'charset': 'utf8mb4',
+                'use_unicode': True,
+                'get_warnings': True,
+                'raise_on_warnings': True,
+                'connection_timeout': 10,
+                'pool_reset_session': True
+            }
+            
+            self.pool = mysql.connector.pooling.MySQLConnectionPool(**pool_config)
+            logger.info("Database connection pool initialized successfully")
+            
         except Error as e:
-            logger.error(f"Error connecting to TiDB: {e}")
-            return False
+            logger.error(f"Error initializing connection pool: {e}")
+            self.pool = None
     
-    def disconnect(self):
-        """Close TiDB connection."""
-        if self.connection and self.connection.is_connected():
-            self.connection.close()
-            logger.info("TiDB connection closed")
+    def get_connection(self):
+        """Get a connection from the pool."""
+        if not self.pool:
+            self._initialize_pool()
+        
+        try:
+            return self.pool.get_connection()
+        except Error as e:
+            logger.error(f"Error getting connection from pool: {e}")
+            return None
     
     def initialize_database(self):
         """Create necessary tables for CerebralGuard if they don't exist."""
-        if not self.connection:
-            if not self.connect():
+        if not self.pool:
+            if not self._initialize_pool():
                 return False
         
         try:
-            cursor = self.connection.cursor()
+            connection = self.get_connection()
+            if not connection:
+                return False
+                
+            cursor = connection.cursor()
             
             # Create incidents table for storing email analysis results
             incidents_table = """
@@ -103,7 +123,7 @@ class TiDBManager:
             
             cursor.execute(incidents_table)
             cursor.execute(threat_intel_table)
-            self.connection.commit()
+            connection.commit()
             
             logger.info("Database tables initialized successfully")
             return True
@@ -114,6 +134,8 @@ class TiDBManager:
         finally:
             if cursor:
                 cursor.close()
+            if connection:
+                connection.close()
     
     def find_similar_incidents(self, email_vector: List[float], similarity_threshold: float = 0.8) -> List[Dict]:
         """
@@ -126,12 +148,16 @@ class TiDBManager:
         Returns:
             List of similar incidents with their details
         """
-        if not self.connection:
-            if not self.connect():
+        if not self.pool:
+            if not self._initialize_pool():
                 return []
         
         try:
-            cursor = self.connection.cursor(dictionary=True)
+            connection = self.get_connection()
+            if not connection:
+                return []
+                
+            cursor = connection.cursor(dictionary=True)
             
             # Convert vector to JSON for storage/comparison
             vector_json = json.dumps(email_vector)
@@ -177,6 +203,8 @@ class TiDBManager:
         finally:
             if cursor:
                 cursor.close()
+            if connection:
+                connection.close()
     
     def search_threat_intelligence(self, iocs: Dict[str, List[str]]) -> Dict[str, List[Dict]]:
         """
@@ -195,12 +223,16 @@ class TiDBManager:
         Returns:
             Dictionary of found threats by IOC type
         """
-        if not self.connection:
-            if not self.connect():
+        if not self.pool:
+            if not self._initialize_pool():
                 return {}
         
         try:
-            cursor = self.connection.cursor(dictionary=True)
+            connection = self.get_connection()
+            if not connection:
+                return {}
+                
+            cursor = connection.cursor(dictionary=True)
             found_threats = {}
             
             for ioc_type, values in iocs.items():
@@ -242,6 +274,8 @@ class TiDBManager:
         finally:
             if cursor:
                 cursor.close()
+            if connection:
+                connection.close()
     
     def store_incident(self, incident_data: Dict) -> bool:
         """
@@ -253,12 +287,16 @@ class TiDBManager:
         Returns:
             True if successful, False otherwise
         """
-        if not self.connection:
-            if not self.connect():
+        if not self.pool:
+            if not self._initialize_pool():
                 return False
         
         try:
-            cursor = self.connection.cursor()
+            connection = self.get_connection()
+            if not connection:
+                return False
+                
+            cursor = connection.cursor()
             
             query = """
             INSERT INTO incidents (
@@ -284,7 +322,7 @@ class TiDBManager:
             )
             
             cursor.execute(query, values)
-            self.connection.commit()
+            connection.commit()
             
             logger.info(f"Stored incident with hash: {incident_data.get('email_hash')}")
             return True
@@ -295,6 +333,8 @@ class TiDBManager:
         finally:
             if cursor:
                 cursor.close()
+            if connection:
+                connection.close()
     
     def add_threat_intelligence(self, ioc_type: str, value: str, threat_level: str, source: str) -> bool:
         """
@@ -309,12 +349,16 @@ class TiDBManager:
         Returns:
             True if successful, False otherwise
         """
-        if not self.connection:
-            if not self.connect():
+        if not self.pool:
+            if not self._initialize_pool():
                 return False
         
         try:
-            cursor = self.connection.cursor()
+            connection = self.get_connection()
+            if not connection:
+                return False
+                
+            cursor = connection.cursor()
             
             query = """
             INSERT INTO threat_intelligence (indicator_type, indicator_value, threat_level, source)
@@ -326,7 +370,7 @@ class TiDBManager:
             """
             
             cursor.execute(query, (ioc_type, value, threat_level, source))
-            self.connection.commit()
+            connection.commit()
             
             logger.info(f"Added threat intelligence: {ioc_type}={value}")
             return True
@@ -337,6 +381,8 @@ class TiDBManager:
         finally:
             if cursor:
                 cursor.close()
+            if connection:
+                connection.close()
 
 # Global instance for easy access
 tidb_manager = TiDBManager() 
